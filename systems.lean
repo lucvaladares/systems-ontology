@@ -1,5 +1,8 @@
 open Classical
 
+/-
+PRIMITIVE_TYPES
+-/
 
 inductive Object : Type
   | mk : String → Object
@@ -14,7 +17,12 @@ inductive Event : Type
   deriving Nonempty, Inhabited, DecidableEq, Repr
 
 
-/- TIME STRUCTURE -/
+/-
+TIME STRUCTURE
+
+A linear ordering of instants is assumed.
+
+-/
 opaque after (t1 t2 : Instant) : Prop
 
 axiom after_irreflexive (t : Instant) :
@@ -29,11 +37,11 @@ axiom after_transitive (t1 t2 t3 : Instant) :
 axiom temporal_ordering :
     ∀ t1 t2, after t1 t2 ∨ t1 = t2 ∨ after t2 t1
 
-def before (t1 t2 : Instant) : Prop :=
-    after t2 t1
-
-def directly_after (t1 t2 : Instant) : Prop :=
+def immediately_after (t1 t2 : Instant) : Prop :=
     after t1 t2 ∧ ¬ ∃ t3, after t1 t3 ∧ after t3 t2
+
+axiom immediately_after_exists (t1 : Instant) :
+    ∃ t2, immediately_after t1 t2
 
 theorem after_is_distinct (t1 t2 : Instant) :
     after t1 t2 → t1 ≠ t2 :=
@@ -42,8 +50,8 @@ by
     have h3 := after_irreflexive t1
     simp_all
 
-theorem singleton_directly_after (t1 t2 t3 : Instant) :
-    directly_after t1 t2 → directly_after t1 t3 → t2 = t3 :=
+theorem immediately_after_is_unique (t1 t2 t3 : Instant) :
+    immediately_after t1 t2 → immediately_after t1 t3 → t2 = t3 :=
 by
     intro ⟨ h1, h2 ⟩ ⟨ h3, h4 ⟩
     simp_all
@@ -52,8 +60,45 @@ by
     have h7 := temporal_ordering t3 t2
     simp_all
 
+theorem immediately_after_implies_distinct (t1 t2 : Instant) :
+    immediately_after t1 t2 → t1 ≠ t2 :=
+by
+    intro ⟨ h1, h2 ⟩ h3
+    have h4 := after_is_distinct t1 t2 h1
+    simp_all
 
-/- EVENTS -/
+theorem immediately_after_implies_after (t1 t2 : Instant) :
+    immediately_after t1 t2 → after t1 t2 :=
+by
+    intro ⟨ h1, h2 ⟩
+    exact h1
+
+theorem immediately_after_is_irreflexive (t : Instant) :
+    ¬ immediately_after t t :=
+by
+    intro h1
+    have h2 := immediately_after_implies_distinct t t h1
+    simp_all
+
+theorem immediately_after_is_asymmetric (t1 t2 : Instant) :
+    immediately_after t1 t2 → ¬ immediately_after t2 t1 :=
+by
+    intro ⟨ h1, h2 ⟩ h3
+    have h4 := immediately_after_implies_after t2 t1 h3
+    have h5 := after_asymmetric t1 t2 h1 h4
+    contradiction
+
+theorem immediately_after_is_intransitive (t1 t2 t3 : Instant) :
+    immediately_after t1 t2 → immediately_after t2 t3 → ¬ immediately_after t1 t3 :=
+by
+    intro h1 h2 h3
+    have h4 := immediately_after_is_unique t1 t2 t3 h1 h3
+    have h5 := immediately_after_implies_distinct t2 t3 h2
+    contradiction
+
+/-
+EVENTS
+-/
 opaque starts_at (e : Event) (t : Instant) : Prop
 opaque ends_at (e : Event) (t : Instant) : Prop
 opaque participates_in (x : Object) (e : Event) : Prop
@@ -61,10 +106,10 @@ opaque participates_in (x : Object) (e : Event) : Prop
 axiom event_has_start_and_end (e : Event) :
     ∃ t1 t2, starts_at e t1 ∧ ends_at e t2
 
-axiom event_starts_before_it_ends (e : Event) (t1 t2 : Instant) :
-    starts_at e t1 ∧ ends_at e t2 → after t1 t2
+axiom event_ends_after_start (e : Event) (t1 t2 : Instant) :
+    starts_at e t1 ∧ ends_at e t2 → after t2 t1
 
-axiom event_has_participants (e : Event) :
+axiom event_has_participant (e : Event) :
     ∃ x : Object, participates_in x e
 
 theorem event_has_start (e : Event) :
@@ -87,25 +132,29 @@ theorem start_and_end_are_distinct (e : Event) (t1 t2 : Instant) :
     starts_at e t1 ∧ ends_at e t2 → t1 ≠ t2 :=
 by
     intro ⟨ h1, h2 ⟩ h3
-    have h4 := event_starts_before_it_ends e t1 t2 ⟨ h1, h2 ⟩
-    have h5 := after_is_distinct t1 t2 h4
+    have h4 := event_ends_after_start e t1 t2 ⟨ h1, h2 ⟩
+    have h5 := after_is_distinct t2 t1 h4
     simp_all
 
 
 def InstantaneousEvent (e : Event) : Prop :=
-    ∃ t1 t2: Instant, starts_at e t1 ∧ ends_at e t2 ∧ directly_after t1 t2
+    ∃ t1 t2: Instant, starts_at e t1 ∧ ends_at e t2 ∧ immediately_after t1 t2
 
 def SingleParticipantEvent (e : Event) : Prop :=
     ∀ x y: Object, participates_in x e → participates_in y e → x = y
 
-/- PRESENCE -/
+/-
+PRESENCE
+-/
 opaque present_at (x : Object) (t : Instant) : Prop
 
 axiom non_returning_objects (x : Object) (t1 t2 : Instant) :
     present_at x t1 ∧ ¬ present_at x t2 → ¬ ∃ t3, after t3 t2 ∧ present_at x t3
 
 
-/- COMPOSITION -/
+/-
+COMPOSITION
+-/
 opaque component_of (x y : Object) (t : Instant) : Prop
 
 
@@ -127,14 +176,13 @@ def essential_component_of (x y : Object) : Prop :=
 def necessary_component_of (x y : Object) : Prop :=
     ∀ t : Instant, present_at x t ∧ component_of x y t
 
-/- CONNECTION -/
+/-
+CONNECTION
+-/
 opaque connected_to (x y : Object) (t : Instant) : Prop
 
 axiom connected_symmetric (x y : Object) (t : Instant) :
     connected_to x y t → connected_to y x t
-
-axiom connected_transitive (x y z : Object) (t : Instant) :
-    connected_to x y t → connected_to y z t → connected_to x z t
 
 axiom components_interconnected (x y : Object) (t : Instant) :
     ∃ z : Object, component_of x z t ∧ component_of y z t → connected_to x y t
@@ -142,7 +190,9 @@ axiom components_interconnected (x y : Object) (t : Instant) :
 axiom connection_presence (x y : Object) (t : Instant) :
     connected_to x y t → present_at x t ∧ present_at y t
 
-
+/-
+SYSTEMS
+-/
 def System (x : Object) : Prop :=
     ∃ y : Object, ∃ t : Instant, component_of y x t
 
@@ -158,17 +208,28 @@ def SystemCreation (e : Event) : Prop :=
     ∃ x : Object, ∃ t1 t2 : Instant, starts_at e t1 ∧ ends_at e t2 ∧
         participates_in x e ∧ ¬ present_at x t1 ∧ present_at x t2
 
+def SystemTermination (e : Event) : Prop :=
+    SingleParticipantEvent e ∧ InstantaneousEvent e ∧
+    ∃ x : Object, ∃ t1 t2 : Instant, starts_at e t1 ∧ ends_at e t2 ∧
+        participates_in x e ∧ present_at x t1 ∧ ¬present_at x t2
 
-theorem systems_have_multiple_components :
-    ∀ x, System x → ∃ y z, component_of y x ∧ component_of z x ∧ y ≠ z :=
+
+theorem systems_have_multiple_components (x : Object):
+    System x → ∃ y z t, component_of y x t ∧ component_of z x t ∧ y ≠ z :=
 by
-    intro x h1
+    intro h1
     have h2 := h1
     unfold System at h2
     cases h2 with
     | intro y h3 =>
-        have h4 := component_supplementation y x h3
-        cases h4 with
-        | intro z h5 =>
-            exists y
-            exists z
+        cases h3 with
+        | intro t h4 =>
+            have h5 := component_supplementation y x t h4
+            cases h5 with
+            | intro z h6 =>
+                have h7 := And.intro h4 h6
+                apply byContradiction
+                intro h8
+                simp_all
+                have h9 := h8 y z t
+                simp_all
